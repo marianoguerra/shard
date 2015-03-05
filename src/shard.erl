@@ -1,12 +1,12 @@
 -module(shard).
 -behaviour(gen_server).
 
--export([start_link/1, handle/3]).
+-export([start_link/1, handle/3, stop/1]).
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
          code_change/3]).
 
--ignore_xref([start_link/1, handle/3]).
+-ignore_xref([start_link/1, handle/3, stop/1]).
 
 -record(state, {resources, hash_fun}).
 
@@ -15,7 +15,7 @@
 -type key() :: term().
 -type start_error() :: {already_started, pid()} | term().
 -type opts() :: [opt()].
--type opt() :: {resource_handler, atom()} |
+-type opt() :: {resource_opts, atom()} |
                {hash_fun, callable()}.
 -type mf() :: {atom(), atom()}.
 -type callable() :: mf() | mfa() | pid() | fun().
@@ -29,6 +29,9 @@ start_link(Opts) ->
 -spec handle(shard(), key(), callable()) -> term().
 handle(Ref, Key, Handler) ->
     gen_server:call(Ref, {handle, Key, Handler}).
+
+stop(Ref) ->
+    gen_server:call(Ref, stop).
 
 %% gen_server callbacks
 
@@ -53,18 +56,22 @@ handle_call({handle, Key, Handler}, _From,
                 erlang:monitor(process, Pid),
                 Result = handle(Pid, Handler),
                 {Result, NResources};
-            {error, Reason, NResources} ->
+            {{error, Reason}, NResources} ->
                 {{error, Reason}, NResources}
         end,
     {Reply, NewResources} = R,
     NewState = State#state{resources=NewResources},
-    {reply, Reply, NewState}.
+    {reply, Reply, NewState};
+
+handle_call(stop, _From, State=#state{resources=Resources}) ->
+    ok = rscbag:stop(Resources),
+    {stop, normal, stopped, State}.
 
 handle_info({'DOWN', _MonitorRef, process, Pid, _Info},
             State=#state{resources=Resources}) ->
     R = case rscbag:remove_by_val(Resources, Pid) of
             {ok, NResources} -> NResources;
-            {error, notfound, NResources} -> NResources
+            {{error, notfound}, NResources} -> NResources
         end,
 
     NewResources = R,

@@ -64,6 +64,9 @@ eunit: compile clean-common-test-data
 ct: compile
 	$(REBAR) skip_deps=true ct
 
+xref: compile
+	$(REBAR) skip_deps=true xref
+
 test: compile eunit
 
 $(DEPS_PLT):

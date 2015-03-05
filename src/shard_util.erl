@@ -1,6 +1,8 @@
 -module(shard_util).
 -export([new_chash_fun/2, chash_fun/2]).
 
+-ignore_xref([new_chash_fun/2, chash_fun/2]).
+
 -record(chash_state, {chash, chashbin}).
 
 new_chash_fun(NumPartitions, SeedNode) ->
@@ -14,6 +16,6 @@ chash_fun(Key, #chash_state{chashbin=CHB}) ->
     DocIdx = chash:key_of(Key),
     Itr = chashbin:iterator(DocIdx, CHB),
     N = 1,
-    {[Partition], _} = chashbin:itr_pop(N, Itr),
+    {[{Partition, _}], _} = chashbin:itr_pop(N, Itr),
     Partition.
 
