@@ -1,0 +1,7 @@
+.deps_plt
+.eunit
+.rebar
+ebin
+logs
+test/*.beam
+deps

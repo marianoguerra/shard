@@ -1,0 +1,14 @@
+{application, shard,
+ [
+  {description, "An Erlang library to shard work to child processes by key"},
+  {vsn, "1"},
+  {modules, [
+             shard
+            ]},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib
+                 ]},
+  {env, []}
+ ]}.
