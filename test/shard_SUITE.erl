@@ -2,7 +2,7 @@
 -compile(export_all).
 
 all() -> [noop, stop_shard, ping_mfa, ping_mf, ping_fun, accum_sharded, handle_existing,
-         accum_stop_accum].
+         accum_stop_accum, two_keys_same_hash].
 
 init_per_suite(Config) -> 
     Config.
@@ -90,3 +90,14 @@ accum_stop_accum(Config) ->
 stop_shard(Config) ->
     Shard = shard(Config),
     stopped = shard:stop(Shard).
+
+two_keys_same_hash(Config) ->
+    Shard = shard(Config),
+    Accum = fun (Key, Value) ->
+                    MFA = {test_resource_server, accum, [Value]},
+                    shard:handle(Shard, Key, MFA)
+            end,
+    {ok, [a]} = Accum(<<"sandy2">>, a),
+    {ok, [b, a]} = Accum(<<"sandy5">>, b),
+    {ok, [c, b, a]} = Accum(<<"sandy2">>, c).
+
