@@ -1,7 +1,7 @@
 -module(shard).
 -behaviour(gen_server).
 
--export([start_link/1, handle/3, stop/1]).
+-export([start_link/1, handle/3, handle_existing/3, stop/1]).
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
          code_change/3]).
@@ -30,6 +30,10 @@ start_link(Opts) ->
 handle(Ref, Key, Handler) ->
     gen_server:call(Ref, {handle, Key, Handler}).
 
+-spec handle_existing(shard(), key(), callable()) -> term().
+handle_existing(Ref, Key, Handler) ->
+    gen_server:call(Ref, {handle_existing, Key, Handler}).
+
 stop(Ref) ->
     gen_server:call(Ref, stop).
 
@@ -46,18 +50,18 @@ init(Opts) ->
 -spec handle_call({handle, key(), callable()}, any(), state()) -> {reply, term(), state()}.
 handle_call({handle, Key, Handler}, _From,
             State=#state{resources=Resources, hash_fun=HashFun}) ->
-    Partition = handle(Key, HashFun),
-    ResourceInitOpts = [{shard_lib_partition, Partition}],
-    R = case rscbag:get(Resources, Partition, ResourceInitOpts) of
+    Partition = call_handler(Key, HashFun),
+    {Reply, NewResources} = call_handler_1(Partition, Resources, Handler),
+    NewState = State#state{resources=NewResources},
+    {reply, Reply, NewState};
+
+handle_call({handle_existing, Key, Handler}, _From,
+            State=#state{resources=Resources, hash_fun=HashFun}) ->
+    Partition = call_handler(Key, HashFun),
+    R = case rscbag:get_existing(Resources, Partition) of
             {{ok, found, Pid}, NResources} ->
-                Result = handle(Pid, Handler),
-                {Result, NResources};
-            {{ok, created, Pid}, NResources} ->
-                erlang:monitor(process, Pid),
-                Result = handle(Pid, Handler),
-                {Result, NResources};
-            {{error, Reason}, NResources} ->
-                {{error, Reason}, NResources}
+                call_handler(Partition, Pid, Handler, NResources);
+            {{error, notfound}, _NResources}=E -> E
         end,
     {Reply, NewResources} = R,
     NewState = State#state{resources=NewResources},
@@ -69,7 +73,7 @@ handle_call(stop, _From, State=#state{resources=Resources}) ->
 
 handle_info({'DOWN', _MonitorRef, process, Pid, _Info},
             State=#state{resources=Resources}) ->
-    R = case rscbag:remove_by_val(Resources, Pid) of
+    R = case rscbag:remove_by_val(Resources, Pid, false) of
             {ok, NResources} -> NResources;
             {{error, notfound}, NResources} -> NResources
         end,
@@ -94,11 +98,33 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% Internals
 
-handle(Msg, Pid) when is_pid(Pid) ->
+call_handler(Msg, Pid) when is_pid(Pid) ->
     erlang:send(Pid, Msg);
-handle(Msg, Fun) when is_function(Fun) ->
+call_handler(Msg, Fun) when is_function(Fun) ->
     Fun(Msg);
-handle(Msg, {M, F}) ->
+call_handler(Msg, {M, F}) ->
     erlang:apply(M, F, [Msg]);
-handle(Msg, {M, F, A}) ->
+call_handler(Msg, {M, F, A}) ->
     erlang:apply(M, F, [Msg|A]).
+
+call_handler(Partition, Pid, Handler, Resources) ->
+    case is_process_alive(Pid) of
+        true ->
+            Result = call_handler(Pid, Handler),
+            {Result, Resources};
+        false ->
+            {_, NResources} = rscbag:remove_by_val(Resources, Pid),
+            call_handler_1(Partition, NResources, Handler)
+    end.
+
+call_handler_1(Partition, Resources, Handler) ->
+    ResourceInitOpts = [{shard_lib_partition, Partition}],
+    case rscbag:get(Resources, Partition, ResourceInitOpts) of
+        {{ok, found, Pid}, NResources} ->
+            call_handler(Partition, Pid, Handler, NResources);
+        {{ok, created, Pid}, NResources} ->
+            erlang:monitor(process, Pid),
+            call_handler(Partition, Pid, Handler, NResources);
+        {{error, _Reason}, _NResources}=E -> E
+    end.
+
