@@ -98,14 +98,14 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% Internals
 
-call_handler(Msg, Pid) when is_pid(Pid) ->
-    erlang:send(Pid, Msg);
-call_handler(Msg, Fun) when is_function(Fun) ->
-    Fun(Msg);
-call_handler(Msg, {M, F}) ->
-    erlang:apply(M, F, [Msg]);
-call_handler(Msg, {M, F, A}) ->
-    erlang:apply(M, F, [Msg|A]).
+call_handler(Pid, Handler) when is_pid(Handler) ->
+    erlang:send(Handler, Pid);
+call_handler(Pid, Handler) when is_function(Handler) ->
+    Handler(Pid);
+call_handler(Pid, {M, F}) ->
+    erlang:apply(M, F, [Pid]);
+call_handler(Pid, {M, F, A}) ->
+    erlang:apply(M, F, [Pid|A]).
 
 call_handler(Partition, Pid, Handler, Resources) ->
     case is_process_alive(Pid) of
