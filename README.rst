@@ -17,7 +17,7 @@ where resource_opts are the options that will be passed to an instance of
 that will receive a Key and will return it's hash, we provide a default
 implementation on shard_util using riak_core's chash.
 
-You can create a chash hash_fun with 64 vnodes like this:
+You can create a chash hash_fun with 64 vnodes like this::
 
     HashFun = shard_util:new_chash_fun(64, Name).
 
