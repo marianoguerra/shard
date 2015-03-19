@@ -1,12 +1,12 @@
 -module(shard).
 -behaviour(gen_server).
 
--export([start_link/1, handle/3, handle_existing/3, stop/1]).
+-export([start_link/1, handle/3, handle_all/2, handle_existing/3, stop/1]).
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
          code_change/3]).
 
--ignore_xref([start_link/1, handle/3, stop/1]).
+-ignore_xref([start_link/1, handle/3, handle_all/2, handle_existing/3, stop/1]).
 
 -record(state, {resources, hash_fun}).
 
@@ -30,6 +30,9 @@ start_link(Opts) ->
 handle(Ref, Key, Handler) ->
     gen_server:call(Ref, {handle, Key, Handler}).
 
+handle_all(Ref, Handler) ->
+    gen_server:call(Ref, {handle_all, Handler}).
+
 -spec handle_existing(shard(), key(), callable()) -> term().
 handle_existing(Ref, Key, Handler) ->
     gen_server:call(Ref, {handle_existing, Key, Handler}).
@@ -50,14 +53,25 @@ init(Opts) ->
 -spec handle_call({handle, key(), callable()}, any(), state()) -> {reply, term(), state()}.
 handle_call({handle, Key, Handler}, _From,
             State=#state{resources=Resources, hash_fun=HashFun}) ->
-    Partition = call_handler(Key, HashFun),
+    Partition = call_handler({hash, Key}, HashFun),
     {Reply, NewResources} = call_handler_1(Partition, Resources, Handler),
+    NewState = State#state{resources=NewResources},
+    {reply, Reply, NewState};
+
+handle_call({handle_all, Handler}, _From,
+            State=#state{resources=Resources, hash_fun=HashFun}) ->
+    Partitions = call_handler(all, HashFun),
+    Fun = fun (Partition, {RepliesIn, ResourcesIn}) ->
+                  {Reply, ResourcesOut} = call_handler_1(Partition, ResourcesIn, Handler),
+                  {[{Partition, Reply}|RepliesIn], ResourcesOut}
+          end,
+    {Reply, NewResources} = lists:foldl(Fun, {[], Resources}, Partitions),
     NewState = State#state{resources=NewResources},
     {reply, Reply, NewState};
 
 handle_call({handle_existing, Key, Handler}, _From,
             State=#state{resources=Resources, hash_fun=HashFun}) ->
-    Partition = call_handler(Key, HashFun),
+    Partition = call_handler({hash, Key}, HashFun),
     R = case rscbag:get_existing(Resources, Partition) of
             {{ok, found, Pid}, NResources} ->
                 call_handler(Partition, Pid, Handler, NResources);

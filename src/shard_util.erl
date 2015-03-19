@@ -12,10 +12,14 @@ new_chash_fun(NumPartitions, SeedNode) ->
     Args = [State],
     {shard_util, chash_fun, Args}.
 
-chash_fun(Key, #chash_state{chashbin=CHB}) ->
+chash_fun({hash, Key}, #chash_state{chashbin=CHB}) ->
     DocIdx = chash:key_of(Key),
     Itr = chashbin:iterator(DocIdx, CHB),
     N = 1,
     {[{Partition, _}], _} = chashbin:itr_pop(N, Itr),
-    Partition.
+    Partition;
+
+chash_fun(all, #chash_state{chash=CH}) ->
+    Nodes = chash:nodes(CH),
+    lists:map(fun  ({Partition, _}) -> Partition end, Nodes).
 

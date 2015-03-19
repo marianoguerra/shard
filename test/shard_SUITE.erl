@@ -2,7 +2,7 @@
 -compile(export_all).
 
 all() -> [noop, stop_shard, ping_mfa, ping_mf, ping_fun, accum_sharded, handle_existing,
-         accum_stop_accum, two_keys_same_hash].
+         accum_stop_accum, two_keys_same_hash, ping_all].
 
 init_per_suite(Config) -> 
     Config.
@@ -32,6 +32,14 @@ ping_mf(Config) ->
     MFA = {test_resource_server, ping},
     {pong, Ref, Partition} = shard:handle(Shard, <<"mariano">>, MFA),
     ct:pal("Partition ~p Ref ~p", [Partition, Ref]).
+
+ping_all(Config) ->
+    Shard = shard(Config),
+    MFA = {test_resource_server, ping},
+    Replies = shard:handle_all(Shard, MFA),
+    64 = length(Replies),
+    true = lists:all(fun ({Partition, {pong, _, Partition}}) -> true; (_) -> false end,
+                     Replies).
 
 ping_fun(Config) ->
     Shard = shard(Config),
