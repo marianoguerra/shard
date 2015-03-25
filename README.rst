@@ -10,12 +10,17 @@ Usage
 
 You create a hash by calling::
 
-    {ok, Shard} = shard:start_link([{resource_opts, ResourceOpts}, {hash_fun, HashFun}]),
+    {ok, Shard} = shard:start_link([{rscbag_opts, ResourceOpts}, {hash_fun, HashFun}]),
 
-where resource_opts are the options that will be passed to an instance of
+where rscbag_opts are the options that will be passed to an instance of
 `rscbag <https://github.com/marianoguerra/rscbag>`_ and hash_fun is a callable
 that will receive a Key and will return it's hash, we provide a default
 implementation on shard_util using riak_core's chash.
+
+Optionally you can pass {shard_opts, PropList} to start_link which can contain
+options to pass to each shard as it's created, this options also will contain
+an entry {shard_lib_partition, Partition} which contains the partition
+identifying the shard.
 
 You can create a chash hash_fun with 64 vnodes like this::
 

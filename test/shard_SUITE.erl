@@ -10,7 +10,7 @@ init_per_suite(Config) ->
 init_per_testcase(Test, Config) ->
     ResourceOpts = [{resource_handler, test_resource_handler}],
     HashFun = shard_util:new_chash_fun(64, Test),
-    {ok, Shard} = shard:start_link([{resource_opts, ResourceOpts}, {hash_fun, HashFun}]),
+    {ok, Shard} = shard:start_link([{rscbag_opts, ResourceOpts}, {hash_fun, HashFun}]),
     [{shard, Shard}|Config].
 
 end_per_testcase(_Test, Config) ->

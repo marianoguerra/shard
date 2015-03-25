@@ -8,14 +8,15 @@
 
 -ignore_xref([start_link/1, handle/3, handle_all/2, handle_existing/3, stop/1]).
 
--record(state, {resources, hash_fun}).
+-record(state, {resources, hash_fun, shard_opts}).
 
 -type shard() :: pid().
 -type state() :: #state{}.
 -type key() :: term().
 -type start_error() :: {already_started, pid()} | term().
 -type opts() :: [opt()].
--type opt() :: {resource_opts, atom()} |
+-type opt() :: {rscbag_opts, atom()} |
+               {shard_opts, [{atom(), term()}]}|
                {hash_fun, callable()}.
 -type mf() :: {atom(), atom()}.
 -type callable() :: mf() | mfa() | pid() | fun().
@@ -44,25 +45,30 @@ stop(Ref) ->
 
 -spec init(opts()) -> {ok, state()}.
 init(Opts) ->
-    {resource_opts, RscOpts} = proplists:lookup(resource_opts, Opts),
+    {rscbag_opts, RscOpts} = proplists:lookup(rscbag_opts, Opts),
     {hash_fun, HashFun} = proplists:lookup(hash_fun, Opts),
+    ShardOpts = proplists:get_value(shard_opts, Opts, []),
     {ok, Resources} = rscbag:init(RscOpts),
-    State = #state{resources=Resources, hash_fun=HashFun},
+    State = #state{resources=Resources, hash_fun=HashFun, shard_opts=ShardOpts},
     {ok, State}.
 
 -spec handle_call({handle, key(), callable()}, any(), state()) -> {reply, term(), state()}.
 handle_call({handle, Key, Handler}, _From,
-            State=#state{resources=Resources, hash_fun=HashFun}) ->
+            State=#state{resources=Resources, hash_fun=HashFun,
+                         shard_opts=ShardOpts}) ->
     Partition = call_handler({hash, Key}, HashFun),
-    {Reply, NewResources} = call_handler_1(Partition, Resources, Handler),
+    {Reply, NewResources} = call_handler_1(Partition, Resources, Handler, ShardOpts),
     NewState = State#state{resources=NewResources},
     {reply, Reply, NewState};
 
 handle_call({handle_all, Handler}, _From,
-            State=#state{resources=Resources, hash_fun=HashFun}) ->
+            State=#state{resources=Resources, hash_fun=HashFun,
+                         shard_opts=ShardOpts}) ->
     Partitions = call_handler(all, HashFun),
     Fun = fun (Partition, {RepliesIn, ResourcesIn}) ->
-                  {Reply, ResourcesOut} = call_handler_1(Partition, ResourcesIn, Handler),
+                  {Reply, ResourcesOut} = call_handler_1(Partition,
+                                                         ResourcesIn, Handler,
+                                                         ShardOpts),
                   {[{Partition, Reply}|RepliesIn], ResourcesOut}
           end,
     {Reply, NewResources} = lists:foldl(Fun, {[], Resources}, Partitions),
@@ -70,11 +76,11 @@ handle_call({handle_all, Handler}, _From,
     {reply, Reply, NewState};
 
 handle_call({handle_existing, Key, Handler}, _From,
-            State=#state{resources=Resources, hash_fun=HashFun}) ->
+            State=#state{resources=Resources, hash_fun=HashFun, shard_opts=ShardOpts}) ->
     Partition = call_handler({hash, Key}, HashFun),
     R = case rscbag:get_existing(Resources, Partition) of
             {{ok, found, Pid}, NResources} ->
-                call_handler(Partition, Pid, Handler, NResources);
+                call_handler(Partition, Pid, Handler, NResources, ShardOpts);
             {{error, notfound}, _NResources}=E -> E
         end,
     {Reply, NewResources} = R,
@@ -121,24 +127,24 @@ call_handler(Pid, {M, F}) ->
 call_handler(Pid, {M, F, A}) ->
     erlang:apply(M, F, [Pid|A]).
 
-call_handler(Partition, Pid, Handler, Resources) ->
+call_handler(Partition, Pid, Handler, Resources, ShardOpts) ->
     case is_process_alive(Pid) of
         true ->
             Result = call_handler(Pid, Handler),
             {Result, Resources};
         false ->
             {_, NResources} = rscbag:remove_by_val(Resources, Pid),
-            call_handler_1(Partition, NResources, Handler)
+            call_handler_1(Partition, NResources, Handler, ShardOpts)
     end.
 
-call_handler_1(Partition, Resources, Handler) ->
-    ResourceInitOpts = [{shard_lib_partition, Partition}],
+call_handler_1(Partition, Resources, Handler, ShardOpts) ->
+    ResourceInitOpts = [{shard_lib_partition, Partition}|ShardOpts],
     case rscbag:get(Resources, Partition, ResourceInitOpts) of
         {{ok, found, Pid}, NResources} ->
-            call_handler(Partition, Pid, Handler, NResources);
+            call_handler(Partition, Pid, Handler, NResources, ShardOpts);
         {{ok, created, Pid}, NResources} ->
             erlang:monitor(process, Pid),
-            call_handler(Partition, Pid, Handler, NResources);
+            call_handler(Partition, Pid, Handler, NResources, ShardOpts);
         {{error, _Reason}, _NResources}=E -> E
     end.
 
